@@ -1,147 +1,159 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Video } from '../types';
-import { formatNumber, formatDuration } from '../utils/formatter';
-import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
-import { Play, Pause, Volume2, VolumeX, ExternalLink } from 'lucide-react';
+import React, { useRef, useState, useEffect } from "react";
+import { Play, Pause, Volume2, VolumeX } from "lucide-react";
+import { Video } from "../types";
+import { formatTime } from "../utils";
+import { useAppContext } from "../context/AppContext";
 
 interface VideoPlayerProps {
   video: Video;
+  isActive: boolean;
   index: number;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, index }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  const [progress, setProgress] = useState(0);
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ video, isActive, index }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(true);
+  const [currentTime, setCurrentTime] = useState<number>(0);
+  const [duration, setDuration] = useState<number>(0);
+  const { setCurrentVideo, openGameModal } = useAppContext();
+  const lastTapTimeRef = useRef<number>(0);
   
-  // Use intersection observer to auto-play when in view
-  const [containerRef, isInView] = useIntersectionObserver<HTMLDivElement>(
-    { threshold: 0.7 },
-    () => {
-      if (videoRef.current) {
-        videoRef.current.play().catch(() => {
-          // Auto-play was prevented
-        });
-        setIsPlaying(true);
+  // Handle video playback based on visibility
+  useEffect(() => {
+    if (videoRef.current) {
+      if (isActive && videoRef.current.paused) {
+        videoRef.current.play()
+          .then(() => setIsPlaying(true))
+          .catch(error => console.error("Video play error:", error));
+      } else if (!isActive && !videoRef.current.paused) {
+        videoRef.current.pause();
+        setIsPlaying(false);
       }
     }
-  );
+  }, [isActive]);
 
+  // Update current time and duration
   useEffect(() => {
-    if (!isInView && isPlaying) {
-      videoRef.current?.pause();
-      setIsPlaying(false);
-    }
-  }, [isInView, isPlaying]);
+    const video = videoRef.current;
+    if (!video) return;
 
-  const handlePlayPause = () => {
+    const handleTimeUpdate = () => {
+      setCurrentTime(video.currentTime);
+    };
+
+    const handleLoadedMetadata = () => {
+      setDuration(video.duration);
+    };
+
+    video.addEventListener("timeupdate", handleTimeUpdate);
+    video.addEventListener("loadedmetadata", handleLoadedMetadata);
+
+    return () => {
+      video.removeEventListener("timeupdate", handleTimeUpdate);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadata);
+    };
+  }, []);
+
+  // Toggle play/pause
+  const togglePlay = () => {
     if (videoRef.current) {
       if (isPlaying) {
         videoRef.current.pause();
+        setIsPlaying(false);
       } else {
-        videoRef.current.play().catch(() => {
-          // Playback prevented by browser
-        });
+        videoRef.current.play()
+          .then(() => setIsPlaying(true))
+          .catch(error => console.error("Video play error:", error));
       }
-      setIsPlaying(!isPlaying);
     }
   };
 
-  const handleMuteToggle = () => {
+  // Toggle mute
+  const toggleMute = () => {
     if (videoRef.current) {
       videoRef.current.muted = !isMuted;
       setIsMuted(!isMuted);
     }
   };
 
-  const handleTimeUpdate = () => {
+  // Handle progress bar change
+  const handleProgressChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
     if (videoRef.current) {
-      const currentProgress = (videoRef.current.currentTime / videoRef.current.duration) * 100;
-      setProgress(currentProgress);
+      videoRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
     }
   };
 
-  const handleGameLink = () => {
-    window.open('https://magenta-cendol-1287e0.netlify.app/', '_blank');
+  // Handle tap for double tap detection
+  const handleTap = (e: React.TouchEvent) => {
+    e.preventDefault();
+    const currentTime = Date.now();
+    const timeSinceLastTap = currentTime - lastTapTimeRef.current;
+    
+    if (timeSinceLastTap < 300) {
+      // Double tap detected
+      if (isActive) {
+        setCurrentVideo(video);
+        openGameModal();
+      }
+    }
+    
+    lastTapTimeRef.current = currentTime;
   };
 
-  const hasEvenIndex = index % 2 === 0;
-  const animationClass = hasEvenIndex 
-    ? 'animate-slide-in-right' 
-    : 'animate-slide-in-left';
-
   return (
-    <div 
-      ref={containerRef}
-      className={`relative overflow-hidden rounded-2xl bg-white dark:bg-gray-800 shadow-lg mb-6 ${animationClass}`}
-      style={{ animationDelay: `${index * 0.1}s` }}
-    >
-      <div className="relative aspect-video">
-        <video
-          ref={videoRef}
-          src={video.url}
-          muted={isMuted}
-          loop
-          playsInline
-          className="w-full h-full object-cover"
-          onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
-        />
-        
-        {/* Video controls overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-300 flex flex-col justify-between p-4">
-          <div className="flex justify-between items-center">
-            <div className="px-3 py-1 bg-black/40 backdrop-blur-sm rounded-full text-white text-sm">
-              {formatDuration(video.duration)}
-            </div>
-            <button 
-              onClick={handleGameLink}
-              className="flex items-center gap-1 px-3 py-1 bg-blue-500 rounded-full text-white text-sm hover:bg-blue-600 transition-colors"
-            >
-              <ExternalLink size={16} />
-              Play Game
-            </button>
-          </div>
-          
-          <div className="flex justify-between items-center">
-            <button 
-              onClick={handlePlayPause}
-              className="rounded-full p-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 transition-colors"
-            >
-              {isPlaying ? <Pause size={20} color="white" /> : <Play size={20} color="white" />}
-            </button>
-
-            <button 
-              onClick={handleMuteToggle}
-              className="rounded-full p-2 bg-white/20 backdrop-blur-sm hover:bg-white/30 transition-colors"
-            >
-              {isMuted ? <VolumeX size={20} color="white" /> : <Volume2 size={20} color="white" />}
-            </button>
-          </div>
-        </div>
-        
-        {/* Progress bar */}
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gray-200 dark:bg-gray-700">
-          <div 
-            className="h-full bg-blue-500 transition-all duration-100"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-      </div>
+    <div className="relative w-full h-full bg-black">
+      <video
+        ref={videoRef}
+        src={video.url}
+        className="w-full h-full object-cover"
+        playsInline
+        muted={isMuted}
+        loop
+        onTouchEnd={handleTap}
+        data-index={index}
+      />
       
-      <div className="p-4">
-        <h3 className="font-semibold text-lg text-gray-900 dark:text-white">{video.title}</h3>
-        <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">{video.description}</p>
-        
-        <div className="flex items-center gap-4 mt-3 text-sm text-gray-500 dark:text-gray-400">
-          <div className="flex items-center gap-1">
-            <span className="text-red-500">❤</span> {formatNumber(video.likes)}
+      {/* Overlay controls */}
+      <div 
+        className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center mb-2">
+          <div className="text-white text-sm">
+            {formatTime(currentTime)} / {formatTime(duration)}
           </div>
-          <div className="flex items-center gap-1">
-            <span>👁️</span> {formatNumber(video.views)}
+          <div className="flex gap-2">
+            <button
+              className="p-2 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
+              onClick={togglePlay}
+            >
+              {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+            </button>
+            <button
+              className="p-2 rounded-full bg-black/30 text-white hover:bg-black/50 transition-colors"
+              onClick={toggleMute}
+            >
+              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+            </button>
           </div>
         </div>
+        
+        <input
+          type="range"
+          min="0"
+          max={duration || 100}
+          value={currentTime}
+          onChange={handleProgressChange}
+          className="w-full h-1 bg-white/30 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+        />
+      </div>
+
+      {/* Double-tap instructions */}
+      <div className="absolute top-4 right-4 bg-black/30 text-white text-xs px-2 py-1 rounded-full">
+        Double-tap to play game
       </div>
     </div>
   );

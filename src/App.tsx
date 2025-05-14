@@ -1,18 +1,32 @@
-import React from 'react';
-import Header from './components/Header';
-import VideoFeed from './components/VideoFeed';
-import { videos } from './data/videos';
-import { useTheme } from './hooks/useTheme';
-import './styles/animations.css';
+import React from "react";
+import { AppProvider } from "./context/AppContext";
+import { useAppContext } from "./context/AppContext";
+import VideoFeed from "./components/VideoFeed";
+import GameModal from "./components/GameModal";
+import LoadingScreen from "./components/LoadingScreen";
 
-function App() {
-  const { theme, toggleTheme } = useTheme();
+// Main App wrapper component
+const AppContent: React.FC = () => {
+  const { isLoading } = useAppContext();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-300">
-      <Header theme={theme} toggleTheme={toggleTheme} />
-      <VideoFeed initialVideos={videos} />
+    <div className="h-screen w-screen overflow-hidden bg-black">
+      <VideoFeed />
+      <GameModal />
     </div>
+  );
+};
+
+// Root component with provider
+function App() {
+  return (
+    <AppProvider>
+      <AppContent />
+    </AppProvider>
   );
 }
 

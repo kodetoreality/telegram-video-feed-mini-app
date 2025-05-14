@@ -1,70 +1,101 @@
-import React, { useState, useCallback, useRef } from 'react';
-import VideoPlayer from './VideoPlayer';
-import { Video } from '../types';
-import { Loader } from 'lucide-react';
+import React, { useRef, useState, useEffect } from "react";
+import VideoPlayer from "./VideoPlayer";
+import useInfiniteScroll from "../hooks/useInfiniteScroll";
+import { Loader } from "lucide-react";
 
-interface VideoFeedProps {
-  initialVideos: Video[];
-}
-
-const VideoFeed: React.FC<VideoFeedProps> = ({ initialVideos }) => {
-  const [videos, setVideos] = useState<Video[]>(initialVideos);
-  const [loading, setLoading] = useState(false);
-  const loaderRef = useRef<HTMLDivElement>(null);
+const VideoFeed: React.FC = () => {
+  const {
+    videos,
+    loadMore,
+    currentIndex,
+    setCurrentIndex,
+    lastVideoRef,
+  } = useInfiniteScroll();
   
-  // Simulate loading more videos with reduced timeout
-  const loadMoreVideos = useCallback(() => {
-    if (loading) return;
-    
-    setLoading(true);
-    
-    // Reduced timeout from 1500ms to 300ms for faster loading
-    setTimeout(() => {
-      const newVideos = [...initialVideos].map((video) => ({
-        ...video,
-        id: `${video.id}-${Date.now()}`,
-      }));
+  const feedRef = useRef<HTMLDivElement>(null);
+  const [isScrolling, setIsScrolling] = useState<boolean>(false);
+  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Handle scroll to determine current video
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!feedRef.current) return;
       
-      setVideos(prevVideos => [...prevVideos, ...newVideos]);
-      setLoading(false);
-    }, 300);
-  }, [loading, initialVideos]);
-  
-  // Set up intersection observer for infinite scrolling
-  React.useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !loading) {
-          loadMoreVideos();
-        }
-      },
-      { threshold: 0.1 }
-    );
+      setIsScrolling(true);
+      
+      // Clear previous timeout
+      if (scrollTimeout.current) {
+        clearTimeout(scrollTimeout.current);
+      }
+      
+      // Set a timeout to detect when scrolling has stopped
+      scrollTimeout.current = setTimeout(() => {
+        setIsScrolling(false);
+        
+        // Find the video that is most visible in the viewport
+        const videoElements = feedRef.current?.querySelectorAll('video') || [];
+        let maxVisibleArea = 0;
+        let mostVisibleIndex = currentIndex;
+        
+        videoElements.forEach((video) => {
+          const rect = video.getBoundingClientRect();
+          const videoIndex = parseInt(video.getAttribute('data-index') || '0', 10);
+          
+          // Calculate how much of the video is visible in the viewport
+          const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
+          const visibleArea = visibleHeight > 0 ? visibleHeight / rect.height : 0;
+          
+          if (visibleArea > maxVisibleArea) {
+            maxVisibleArea = visibleArea;
+            mostVisibleIndex = videoIndex;
+          }
+        });
+        
+        setCurrentIndex(mostVisibleIndex);
+      }, 150);
+    };
     
-    if (loaderRef.current) {
-      observer.observe(loaderRef.current);
+    const feedElement = feedRef.current;
+    if (feedElement) {
+      feedElement.addEventListener('scroll', handleScroll);
     }
     
-    return () => observer.disconnect();
-  }, [loadMoreVideos, loading]);
-  
+    return () => {
+      if (feedElement) {
+        feedElement.removeEventListener('scroll', handleScroll);
+      }
+      if (scrollTimeout.current) {
+        clearTimeout(scrollTimeout.current);
+      }
+    };
+  }, [currentIndex, setCurrentIndex]);
+
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
+    <div 
+      ref={feedRef}
+      className="h-full w-full overflow-y-scroll snap-y snap-mandatory"
+      style={{ scrollSnapType: 'y mandatory' }}
+    >
       {videos.map((video, index) => (
-        <VideoPlayer key={video.id} video={video} index={index} />
+        <div
+          key={video.id}
+          ref={index === videos.length - 1 ? lastVideoRef : undefined}
+          className="h-full w-full snap-start snap-always"
+        >
+          <VideoPlayer
+            video={video}
+            isActive={currentIndex === index && !isScrolling}
+            index={index}
+          />
+        </div>
       ))}
       
-      <div 
-        ref={loaderRef} 
-        className="flex justify-center items-center py-8"
-      >
-        {loading && (
-          <div className="flex flex-col items-center">
-            <Loader size={24} className="text-blue-500 animate-spin" />
-            <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm">Loading more videos...</p>
-          </div>
-        )}
-      </div>
+      {/* Loading indicator */}
+      {videos.length > 0 && (
+        <div className="flex justify-center items-center py-4">
+          <Loader className="animate-spin text-white" size={24} />
+        </div>
+      )}
     </div>
   );
 };
