@@ -1,99 +1,88 @@
-import React, { useRef, useState, useEffect } from "react";
-import VideoPlayer from "./VideoPlayer";
-import useInfiniteScroll from "../hooks/useInfiniteScroll";
-import { Loader } from "lucide-react";
+import React, { useState, useEffect, useRef } from 'react';
+import { useAppContext } from '../context/AppContext';
+import VideoCard from './VideoCard';
+import { useTelegram } from '../hooks/useTelegram';
+import { getMoreVideos } from '../data/videos';
 
 const VideoFeed: React.FC = () => {
-  const {
-    videos,
-    loadMore,
-    currentIndex,
-    setCurrentIndex,
-    lastVideoRef,
-  } = useInfiniteScroll();
-  
+  const { state, dispatch } = useAppContext();
+  const { params, isReady } = useTelegram();
+  const [height, setHeight] = useState<number>(window.innerHeight);
   const feedRef = useRef<HTMLDivElement>(null);
-  const [isScrolling, setIsScrolling] = useState<boolean>(false);
-  const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  // Handle scroll to determine current video
+  const [isLoading, setIsLoading] = useState(false);
+  
+  useEffect(() => {
+    const handleResize = () => {
+      setHeight(window.innerHeight);
+    };
+    
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  
   useEffect(() => {
     const handleScroll = () => {
       if (!feedRef.current) return;
       
-      setIsScrolling(true);
+      const scrollTop = feedRef.current.scrollTop;
+      const itemHeight = height;
+      const index = Math.round(scrollTop / itemHeight);
       
-      // Clear previous timeout
-      if (scrollTimeout.current) {
-        clearTimeout(scrollTimeout.current);
+      if (index !== state.currentVideoIndex && index >= 0 && index < state.videos.length) {
+        dispatch({ type: 'SET_CURRENT_VIDEO_INDEX', payload: index });
       }
-      
-      // Set a timeout to detect when scrolling has stopped
-      scrollTimeout.current = setTimeout(() => {
-        setIsScrolling(false);
-        
-        // Find the video that is most visible in the viewport
-        const videoElements = feedRef.current?.querySelectorAll('video') || [];
-        let maxVisibleArea = 0;
-        let mostVisibleIndex = currentIndex;
-        
-        videoElements.forEach((video) => {
-          const rect = video.getBoundingClientRect();
-          const videoIndex = parseInt(video.getAttribute('data-index') || '0', 10);
-          
-          // Calculate how much of the video is visible in the viewport
-          const visibleHeight = Math.min(rect.bottom, window.innerHeight) - Math.max(rect.top, 0);
-          const visibleArea = visibleHeight > 0 ? visibleHeight / rect.height : 0;
-          
-          if (visibleArea > maxVisibleArea) {
-            maxVisibleArea = visibleArea;
-            mostVisibleIndex = videoIndex;
-          }
-        });
-        
-        setCurrentIndex(mostVisibleIndex);
-      }, 150);
+
+      // Load more videos when near the bottom
+      const scrollHeight = feedRef.current.scrollHeight;
+      const clientHeight = feedRef.current.clientHeight;
+      if (scrollTop + clientHeight >= scrollHeight - (clientHeight * 0.5) && !isLoading) {
+        setIsLoading(true);
+        const newVideos = getMoreVideos();
+        dispatch({ type: 'ADD_VIDEOS', payload: newVideos });
+        setIsLoading(false);
+      }
     };
     
     const feedElement = feedRef.current;
     if (feedElement) {
       feedElement.addEventListener('scroll', handleScroll);
+      return () => feedElement.removeEventListener('scroll', handleScroll);
     }
-    
-    return () => {
-      if (feedElement) {
-        feedElement.removeEventListener('scroll', handleScroll);
-      }
-      if (scrollTimeout.current) {
-        clearTimeout(scrollTimeout.current);
-      }
-    };
-  }, [currentIndex, setCurrentIndex]);
+  }, [state.currentVideoIndex, state.videos.length, height, dispatch, isLoading]);
+  
+  const handleOpenGame = (gameUrl: string) => {
+    dispatch({ type: 'OPEN_GAME_MODAL', payload: gameUrl });
+  };
 
+  useEffect(() => {
+    console.log(params, 'params')
+    if (isReady && params === 'auto') {
+      dispatch({ type: 'OPEN_GAME_MODAL', payload: 'https://effortless-cendol-31ac0e.netlify.app' });
+    }
+  }, [isReady, params]);
+  
   return (
     <div 
       ref={feedRef}
-      className="h-full w-full overflow-y-scroll snap-y snap-mandatory"
+      className="h-screen w-full overflow-y-auto overflow-x-hidden snap-y snap-mandatory scroll-smooth"
       style={{ scrollSnapType: 'y mandatory' }}
     >
-      {videos.map((video, index) => (
-        <div
+      {state.videos.map((video, index) => (
+        <div 
           key={video.id}
-          ref={index === videos.length - 1 ? lastVideoRef : undefined}
-          className="h-full w-full snap-start snap-always"
+          className="w-full snap-start snap-always"
+          style={{ height: `${height}px` }}
         >
-          <VideoPlayer
+          <VideoCard
             video={video}
-            isActive={currentIndex === index && !isScrolling}
-            index={index}
+            isActive={index === state.currentVideoIndex}
+            onOpenGame={handleOpenGame}
           />
         </div>
       ))}
-      
-      {/* Loading indicator */}
-      {videos.length > 0 && (
-        <div className="flex justify-center items-center py-4">
-          <Loader className="animate-spin text-white" size={24} />
+      {isLoading && (
+        <div className="w-full h-20 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-gray-600 border-t-white rounded-full animate-spin"></div>
         </div>
       )}
     </div>

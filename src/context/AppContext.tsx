@@ -1,52 +1,82 @@
-import React, { createContext, useState, useContext, ReactNode } from "react";
-import { AppContextType, Video, TelegramUser } from "../types";
-import useTelegramAuth from "../hooks/useTelegramAuth";
+import React, { createContext, useContext, useReducer, ReactNode, useEffect } from 'react';
+import { AppState, TelegramUser, Video } from '../types';
+import { videos } from '../data/videos';
 
-// Create context with default values
-const AppContext = createContext<AppContextType>({
-  currentVideo: null,
-  setCurrentVideo: () => {},
+type AppAction = 
+  | { type: 'SET_CURRENT_VIDEO_INDEX'; payload: number }
+  | { type: 'OPEN_GAME_MODAL'; payload: string }
+  | { type: 'CLOSE_GAME_MODAL' }
+  | { type: 'SET_USER'; payload: TelegramUser }
+  | { type: 'ADD_VIDEOS'; payload: Video[] };
+
+const initialState: AppState = {
+  videos: videos,
+  currentVideoIndex: 0,
   isGameModalOpen: false,
-  openGameModal: () => {},
-  closeGameModal: () => {},
+  currentGame: null,
   user: null,
-  isLoading: true,
+};
+
+const AppContext = createContext<{
+  state: AppState;
+  dispatch: React.Dispatch<AppAction>;
+}>({
+  state: initialState,
+  dispatch: () => null,
 });
 
-// Hook to use the app context
-export const useAppContext = () => useContext(AppContext);
+export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [state, dispatch] = useReducer(appReducer, initialState);
 
-interface AppProviderProps {
-  children: ReactNode;
-}
+  useEffect(() => {
+    // Listen for openGame event
+    const handleOpenGame = (event: CustomEvent<{ gameUrl: string }>) => {
+      dispatch({ type: 'OPEN_GAME_MODAL', payload: event.detail.gameUrl });
+    };
 
-// Provider component
-export const AppProvider: React.FC<AppProviderProps> = ({ children }) => {
-  const [currentVideo, setCurrentVideo] = useState<Video | null>(null);
-  const [isGameModalOpen, setIsGameModalOpen] = useState<boolean>(false);
-  const { user, isLoading } = useTelegramAuth();
-
-  const openGameModal = () => {
-    setIsGameModalOpen(true);
-  };
-
-  const closeGameModal = () => {
-    setIsGameModalOpen(false);
-  };
+    window.addEventListener('openGame', handleOpenGame as EventListener);
+    return () => window.removeEventListener('openGame', handleOpenGame as EventListener);
+  }, []);
 
   return (
-    <AppContext.Provider
-      value={{
-        currentVideo,
-        setCurrentVideo,
-        isGameModalOpen,
-        openGameModal,
-        closeGameModal,
-        user,
-        isLoading,
-      }}
-    >
+    <AppContext.Provider value={{ state, dispatch }}>
       {children}
     </AppContext.Provider>
   );
 };
+
+const appReducer = (state: AppState, action: AppAction): AppState => {
+  switch (action.type) {
+    case 'SET_CURRENT_VIDEO_INDEX':
+      return {
+        ...state,
+        currentVideoIndex: action.payload,
+      };
+    case 'OPEN_GAME_MODAL':
+      return {
+        ...state,
+        isGameModalOpen: true,
+        currentGame: action.payload,
+      };
+    case 'CLOSE_GAME_MODAL':
+      return {
+        ...state,
+        isGameModalOpen: false,
+        currentGame: null,
+      };
+    case 'SET_USER':
+      return {
+        ...state,
+        user: action.payload,
+      };
+    case 'ADD_VIDEOS':
+      return {
+        ...state,
+        videos: [...state.videos, ...action.payload],
+      };
+    default:
+      return state;
+  }
+};
+
+export const useAppContext = () => useContext(AppContext);

@@ -1,89 +1,85 @@
-import React, { useRef, useEffect, useState } from "react";
-import { X, Share2 } from "lucide-react";
-import { useAppContext } from "../context/AppContext";
-import { GAME_URL } from "../constants";
-import { shareViaTelegram, createShareLink } from "../utils";
+import React, { useEffect, useState, useRef } from 'react';
+import { useAppContext } from '../context/AppContext';
+import { X, Share2 } from 'lucide-react';
+import { useTelegram } from '../hooks/useTelegram';
 
 const GameModal: React.FC = () => {
-  const { isGameModalOpen, closeGameModal, currentVideo } = useAppContext();
+  const { state, dispatch } = useAppContext();
+  const [isLoading, setIsLoading] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const { shareGame } = useTelegram();
   
-  // Handle iframe load event
   useEffect(() => {
-    const iframe = iframeRef.current;
-    
-    if (!iframe) return;
-    
-    const handleLoad = () => {
-      setIsLoading(false);
-    };
-    
-    iframe.addEventListener('load', handleLoad);
+    if (state.isGameModalOpen) {
+      document.body.style.overflow = 'hidden';
+      if (iframeRef.current) {
+        iframeRef.current.src = state.currentGame || '';
+      }
+    } else {
+      document.body.style.overflow = 'auto';
+    }
     
     return () => {
-      iframe.removeEventListener('load', handleLoad);
+      document.body.style.overflow = 'auto';
     };
-  }, [isGameModalOpen]);
+  }, [state.isGameModalOpen, state.currentGame]);
   
-  // Reset loading state when modal is opened
-  useEffect(() => {
-    if (isGameModalOpen) {
-      setIsLoading(true);
-    }
-  }, [isGameModalOpen]);
+  const handleClose = () => {
+    dispatch({ type: 'CLOSE_GAME_MODAL' });
+  };
   
-  // Share the game via Telegram
+  const handleIframeLoad = () => {
+    setTimeout(() => {
+      setIsLoading(false);
+    }, 150);
+  };
+  
   const handleShare = () => {
-    if (currentVideo) {
-      const shareLink = createShareLink(currentVideo.id);
-      shareViaTelegram(`Challenge me in this game! ${shareLink}`);
+    if (state.currentGame) {
+      shareGame(state.currentGame);
     }
   };
   
-  if (!isGameModalOpen) return null;
+  if (!state.isGameModalOpen) {
+    return null;
+  }
   
   return (
-    <div className="fixed inset-0 z-50 bg-black flex flex-col">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 bg-gray-900 text-white">
-        <h2 className="text-lg font-bold">Game Challenge</h2>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={handleShare}
-            className="p-2 rounded-full bg-blue-600 text-white"
-            aria-label="Share"
-          >
-            <Share2 size={20} />
-          </button>
-          <button
-            onClick={closeGameModal}
-            className="p-2 rounded-full bg-gray-700 text-white"
-            aria-label="Close"
-          >
-            <X size={20} />
-          </button>
-        </div>
-      </div>
-      
-      {/* Game Container */}
-      <div className="flex-1 relative">
+    <div className="fixed inset-0 z-50 bg-black">
+      <div className="relative w-full h-full">
         {isLoading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black">
+          <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
             <div className="text-center">
-              <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p className="text-white">Loading game...</p>
+              <div className="w-16 h-16 border-4 border-gray-600 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-white text-lg">Loading game...</p>
             </div>
           </div>
         )}
         
         <iframe
           ref={iframeRef}
-          src={GAME_URL}
-          className="w-full h-full border-0"
+          className={`w-full h-full border-0 transition-opacity duration-300 ${isLoading ? 'opacity-0' : 'opacity-100'}`}
+          onLoad={handleIframeLoad}
+          title="Game"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-          allowFullScreen
-        ></iframe>
+        />
+        
+        <div className="absolute top-4 right-4 z-20 flex space-x-4">
+          <button 
+            onClick={handleShare}
+            className="bg-gray-800 hover:bg-gray-700 bg-opacity-70 p-2 rounded-full text-white transition-colors duration-200"
+            aria-label="Share game"
+          >
+            <Share2 size={24} />
+          </button>
+          <button 
+            onClick={handleClose}
+            className="bg-gray-800 hover:bg-gray-700 bg-opacity-70 p-2 rounded-full text-white transition-colors duration-200"
+            aria-label="Close game"
+          >
+            <X size={24} />
+          </button>
+        </div>
       </div>
     </div>
   );
